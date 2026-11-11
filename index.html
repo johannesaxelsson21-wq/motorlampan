@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Motorlampan</title>
+<style>
+  :root{
+    --bg:#f6f4ef; --fg:#1d1d1f; --muted:#5f5f66; --card:#fff;
+    --btn:#1f6feb; --btn-fg:#fff; --ok:#1a7f37; --warn:#b35900; --line:#e3e0d8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#111214; --fg:#f2f2f4; --muted:#a6a6ae; --card:#1c1d20;
+      --btn:#3b82f6; --ok:#3fb950; --warn:#f0883e; --line:#2c2d31; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--fg);
+    font:20px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;align-items:center;
+    padding:max(24px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));}
+  main{width:100%;max-width:480px;flex:1;display:flex;flex-direction:column;justify-content:center;gap:24px}
+  h1{font-size:30px;margin:0;text-align:center}
+  .steps{margin:0;padding:0;list-style:none;color:var(--muted);font-size:19px}
+  .steps li{padding:6px 0}
+  .steps b{color:var(--fg)}
+  button.big{width:100%;min-height:150px;border:0;border-radius:28px;background:var(--btn);color:var(--btn-fg);
+    font-size:30px;font-weight:700;letter-spacing:.2px;box-shadow:0 6px 20px rgba(0,0,0,.18);cursor:pointer}
+  button.big:active{transform:scale(.98)}
+  .status{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px 22px;text-align:center}
+  .icon{font-size:72px;line-height:1;margin-bottom:12px}
+  .status h2{margin:0 0 8px;font-size:28px}
+  .status p{margin:6px 0;color:var(--muted)}
+  .ok h2{color:var(--ok)} .warn h2{color:var(--warn)}
+  .codes{margin:16px 0 0;padding:0;list-style:none;text-align:left;font-size:17px}
+  .codes li{padding:8px 0;border-top:1px solid var(--line)}
+  .codes code{font-weight:700;font-size:18px;color:var(--fg)}
+  .spin{width:64px;height:64px;border:7px solid var(--line);border-top-color:var(--btn);border-radius:50%;
+    margin:0 auto 16px;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .link{background:none;border:0;color:var(--muted);font-size:15px;text-decoration:underline;padding:10px;cursor:pointer}
+  footer{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  #history{font-size:15px;color:var(--muted);width:100%;max-width:480px}
+  #history li{padding:4px 0;border-bottom:1px solid var(--line)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>Motorlampan</h1>
+
+  <section id="idle">
+    <ol class="steps">
+      <li><b>1.</b> Sätt i scannern under ratten</li>
+      <li><b>2.</b> Vrid om nyckeln till <b>tändning på</b> (motorn behöver inte vara igång)</li>
+      <li><b>3.</b> Tryck på den blå knappen</li>
+    </ol>
+  </section>
+
+  <button id="go" class="big">Släck motorlampan</button>
+
+  <section id="status" class="status" hidden></section>
+</main>
+
+<footer>
+  <button id="again" class="link" hidden>Börja om</button>
+  <button id="showAll" class="link">Hittar inte scannern?</button>
+  <button id="histBtn" class="link">Historik</button>
+</footer>
+<ul id="history" hidden></ul>
+
+<script>
+"use strict";
+
+/* ---------- Felkodsbeskrivningar (vanliga, särskilt turbo) ---------- */
+const DESC = {
+  P0299:"Turbo: för lågt laddtryck", P0234:"Turbo: för högt laddtryck",
+  P0235:"Laddtrycksgivare", P0236:"Laddtrycksgivare: orimligt värde", P0237:"Laddtrycksgivare: låg signal", P0238:"Laddtrycksgivare: hög signal",
+  P0243:"Turbo wastegate-ventil", P0244:"Turbo wastegate-ventil", P0245:"Turbo wastegate-ventil: låg signal", P0246:"Turbo wastegate-ventil: hög signal",
+  P0033:"Turbo bypass-ventil", P0034:"Turbo bypass-ventil: låg signal", P0035:"Turbo bypass-ventil: hög signal",
+  P2261:"Turbo bypass-ventil: mekaniskt fel", P2263:"Turbo: laddtrycket fungerar dåligt", P2563:"Turbo: lägesgivare",
+  P0045:"Turbo: styrning av laddtryck", P0046:"Turbo: styrning av laddtryck",
+  P0101:"Luftmassemätare", P0171:"Mager bränsleblandning", P0300:"Misständning", P0401:"EGR-ventil", P0420:"Katalysator"
+};
+
+/* ---------- Kända BLE-tjänster för ELM327-scannrar ---------- */
+const SERVICES = [
+  0xfff0, 0xffe0, 0x18f0,
+  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+];
+const NAME_PREFIXES = ["OBD","Obd","obd","V-LINK","Vgate","IOS-Vlink","vLinker","VLINK","Veepeak","VEEPEAK","KONNWEI","Konnwei",
+  "Viecar","ELM","Elm","OBDLink","iCar","LELink","Carista","BLE","Android-Vlink","Bluetooth","TopDon","Ancel"];
+
+/* ---------- Små hjälpfunktioner ---------- */
+const store = {
+  get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch(e){return d;} },
+  set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+};
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+class FriendlyError extends Error { constructor(title,text){ super(title); this.title=title; this.text=text; } }
+
+/* ---------- Tolka svar på läge 03 (felkoder) ---------- */
+function decodeDTC(w){
+  const b = parseInt(w,16);
+  return "PCBU"[b>>14] + ((b>>12)&3) + (b&0xfff).toString(16).toUpperCase().padStart(3,"0");
+}
+function parseDTCs(raw,isCan){
+  const lines = raw.split(/[\r\n]+/).map(l=>l.replace(/\s+/g,"").toUpperCase())
+    .filter(l=>l && /^[0-9A-F:]+$/.test(l));
+  const msgs=[]; let multi=null;
+  for(const l of lines){
+    if(/^[0-9A-F]{3}$/.test(l)){ multi={len:parseInt(l,16),data:""}; msgs.push(multi); continue; }
+    const m=l.match(/^([0-9A-F]):([0-9A-F]*)$/);
+    if(m && multi){ multi.data+=m[2]; continue; }
+    multi=null; msgs.push({data:l});
+  }
+  const codes=new Set();
+  for(const msg of msgs){
+    let d = msg.len ? msg.data.slice(0,msg.len*2) : msg.data;
+    if(!d.startsWith("43")) continue;
+    d=d.slice(2);
+    const can = isCan===undefined ? d.length%4===2 : isCan;
+    if(can){                       // CAN: första byten är antal koder
+      const n=parseInt(d.slice(0,2),16);
+      d=d.slice(2,2+n*4);
+    }
+    for(let i=0;i+4<=d.length;i+=4){
+      const w=d.slice(i,i+4);
+      if(w!=="0000") codes.add(decodeDTC(w));
+    }
+  }
+  return [...codes];
+}
+
+/* ---------- Bluetooth-anslutning till ELM327 ---------- */
+class BleElm {
+  constructor(){ this.buf=""; this.waiter=null; this.dec=new TextDecoder(); this.enc=new TextEncoder(); }
+  async connect(showAll){
+    if(!navigator.bluetooth){
+      throw new FriendlyError("Öppna i Bluefy","Den här appen måste öppnas i appen <b>Bluefy</b> (gratis i App Store), inte i Safari.");
+    }
+    const saved = store.get("deviceName",null);
+    let opts;
+    if(showAll) opts={acceptAllDevices:true, optionalServices:SERVICES};
+    else if(saved) opts={filters:[{name:saved}], optionalServices:SERVICES};
+    else opts={filters:[...SERVICES.map(s=>({services:[s]})), ...NAME_PREFIXES.map(p=>({namePrefix:p}))], optionalServices:SERVICES};
+
+    this.device = await navigator.bluetooth.requestDevice(opts);
+    this.server = await this.device.gatt.connect();
+    await this.findChars();
+    if(this.device.name) store.set("deviceName",this.device.name);
+  }
+  async findChars(){
+    let services=[];
+    for(const s of SERVICES){ try{ services.push(await this.server.getPrimaryService(s)); }catch(e){} }
+    if(!services.length){ try{ services=await this.server.getPrimaryServices(); }catch(e){} }
+    for(const svc of services){
+      let chars; try{ chars=await svc.getCharacteristics(); }catch(e){ continue; }
+      const notify=chars.find(c=>c.properties.notify||c.properties.indicate);
+      const write=chars.find(c=>c.properties.write||c.properties.writeWithoutResponse);
+      if(notify && write){
+        this.rx=notify; this.tx=write;
+        this.rx.addEventListener("characteristicvaluechanged",e=>this.onData(e.target.value));
+        await this.rx.startNotifications();
+        return;
+      }
+    }
+    throw new FriendlyError("Fel sorts enhet","Det här verkar inte vara en OBD2-scanner. Tryck på <b>Hittar inte scannern?</b> och välj en annan.");
+  }
+  onData(v){
+    this.buf += this.dec.decode(v);
+    const i=this.buf.indexOf(">");
+    if(i>=0 && this.waiter){ const r=this.buf.slice(0,i); this.buf=""; const w=this.waiter; this.waiter=null; w(r); }
+  }
+  async send(cmd,timeout=5000){
+    this.buf="";
+    const p=new Promise((res,rej)=>{ this.waiter=res; setTimeout(()=>{ if(this.waiter===res){this.waiter=null; rej(new Error("timeout:"+cmd));} },timeout); });
+    const data=this.enc.encode(cmd+"\r");
+    if(this.tx.properties.writeWithoutResponse && this.tx.writeValueWithoutResponse) await this.tx.writeValueWithoutResponse(data);
+    else await this.tx.writeValue(data);
+    return p;
+  }
+  disconnect(){ try{ this.device && this.device.gatt.connected && this.device.gatt.disconnect(); }catch(e){} }
+}
+
+/* ---------- Låtsas-scanner för test (?demo, ?demo=0 för inga koder, ?demo=fail) ---------- */
+class FakeElm {
+  constructor(mode){ this.mode=mode; this.cleared=false; }
+  async connect(){ await sleep(700); }
+  async send(cmd){
+    await sleep(350);
+    if(cmd==="0100") return this.mode==="fail" ? "SEARCHING...\rUNABLE TO CONNECT\r" : "SEARCHING...\r4100BE3EB813\r";
+    if(cmd==="03"){
+      if(this.cleared || this.mode==="0") return "4300\r";
+      return "008\r0:430302990234\r1:24360000000000\r";
+    }
+    if(cmd==="04"){ this.cleared=true; return "44\r"; }
+    if(cmd==="ATZ") return "\r\rELM327 v1.5\r";
+    return "OK\r";
+  }
+  disconnect(){}
+}
+
+/* ---------- Själva flödet ---------- */
+function isError(r){ return /UNABLE TO CONNECT|CAN ERROR|BUS ERROR|BUS INIT:.*ERROR|STOPPED|ERROR/i.test(r); }
+
+async function run(showAll){
+  const demo = new URLSearchParams(location.search).get("demo");
+  const elm = demo!==null ? new FakeElm(demo) : new BleElm();
+  try{
+    show("work","Ansluter till scannern…");
+    await elm.connect(showAll);
+
+    show("work","Startar scannern…");
+    try{ await elm.send("ATZ",4000); }catch(e){}
+    await sleep(300);
+    for(const c of ["ATE0","ATL0","ATS0","ATH0","ATSP0"]){ try{ await elm.send(c,3000); }catch(e){} }
+
+    show("work","Pratar med bilen…");
+    let r;
+    try{ r=await elm.send("0100",15000); }catch(e){ r="UNABLE TO CONNECT"; }
+    if(isError(r) || !/41\s*00/i.test(r.replace(/\s/g,""))){
+      throw new FriendlyError("Bilen svarar inte","Kontrollera att nyckeln är vriden till <b>tändning på</b> (lamporna på instrumentbrädan lyser) och att scannern sitter i ordentligt. Försök sedan igen.");
+    }
+
+    let isCan;
+    try{ const dp=(await elm.send("ATDPN",3000)).replace(/[^0-9A-F]/gi,"").toUpperCase(); const n=dp.slice(-1);
+      if(n) isCan=/[6-9A-C]/.test(n); }catch(e){}
+
+    show("work","Letar efter felkoder…");
+    const before = parseDTCs(await elm.send("03",10000),isCan);
+
+    show("work","Raderar felkoder…");
+    const clr = await elm.send("04",10000);
+    if(!/44/.test(clr.replace(/\s/g,""))){
+      throw new FriendlyError("Bilen ville inte radera","Stäng av motorn men låt tändningen vara på, och försök igen.");
+    }
+    await sleep(800);
+    let after=[];
+    try{ after=parseDTCs(await elm.send("03",10000),isCan); }catch(e){}
+
+    const hist=store.get("history",[]);
+    hist.unshift({t:new Date().toISOString(), codes:before, left:after});
+    store.set("history",hist.slice(0,50));
+
+    if(after.length){
+      show("warn","Felet kom tillbaka direkt",
+        "Felkoden försvann inte. Bilen behöver troligen titta på av en verkstad.", after);
+    } else if(before.length){
+      show("ok","Klart! Lampan är släckt",
+        "Stäng av bilen, vänta några sekunder och starta igen. Nu ska turbon fungera som vanligt.", before);
+    } else {
+      show("ok","Inga felkoder hittades",
+        "Bilen hade inga sparade fel. Om lampan ändå lyser: stäng av bilen, vänta en stund och starta igen.");
+    }
+  }catch(e){
+    if(e && e.name==="NotFoundError"){ show("idle"); return; }   // användaren avbröt
+    if(e instanceof FriendlyError) show("warn",e.title,e.text);
+    else show("warn","Något gick fel","Kontrollera att scannern sitter i och att Bluetooth är på. Försök igen.<br><small>("+esc(e && e.message || e)+")</small>");
+  }finally{
+    elm.disconnect();
+  }
+}
+
+/* ---------- Gränssnitt ---------- */
+function show(kind,title,text,codes){
+  const st=$("status"), working=kind==="work";
+  $("idle").hidden = kind!=="idle";
+  $("go").hidden = kind!=="idle";
+  $("again").hidden = kind==="idle"||working;
+  $("showAll").hidden = working || kind==="ok";
+  st.hidden = kind==="idle";
+  if(kind==="idle") return;
+  st.className="status "+kind;
+  let html = working ? '<div class="spin"></div>' : '<div class="icon">'+(kind==="ok"?"✅":"⚠️")+"</div>";
+  html += "<h2>"+esc(title)+"</h2>";
+  if(text) html += "<p>"+text+"</p>";
+  if(codes && codes.length){
+    html += '<ul class="codes">'+codes.map(c=>"<li><code>"+esc(c)+"</code> "+esc(DESC[c]||"")+"</li>").join("")+"</ul>";
+  }
+  st.innerHTML=html;
+}
+
+let busy=false;
+async function start(showAll){ if(busy) return; busy=true; try{ await run(showAll); } finally{ busy=false; } }
+$("go").onclick = ()=>start(false);
+$("again").onclick = ()=>show("idle");
+$("showAll").onclick = ()=>start(true);
+$("histBtn").onclick = ()=>{
+  const h=$("history");
+  if(!h.hidden){ h.hidden=true; return; }
+  const list=store.get("history",[]);
+  h.innerHTML = list.length ? list.map(x=>{
+    const d=new Date(x.t).toLocaleString("sv-SE",{dateStyle:"short",timeStyle:"short"});
+    return "<li>"+esc(d)+": "+(x.codes.length?x.codes.map(esc).join(", "):"inga koder")+(x.left&&x.left.length?" (kom tillbaka)":"")+"</li>";
+  }).join("") : "<li>Ingen historik än.</li>";
+  h.hidden=false;
+};
+</script>
+</body>
+</html>

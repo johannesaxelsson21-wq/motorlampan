@@ -9,6 +9,7 @@ import * as Haptics from "expo-haptics";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Elm, Found, FriendlyError, scan, waitForBluetooth } from "./src/ble";
+import type { Retry } from "./src/types";
 import { answered0100, clearedOk, codeInfo, parseDTCs, protocolIsCan } from "./src/obd";
 
 /* ------------------------------------------------------------------ */
@@ -21,14 +22,14 @@ type Screen =
   | { kind: "idle" }
   | { kind: "work"; step: number }
   | { kind: "pick"; list: Found[] }
-  | { kind: "ok" | "warn"; title: string; text: string; codes?: string[]; noScanner?: boolean };
+  | { kind: "ok" | "calm"; title: string; text: string; icon?: IconName; codes?: string[]; retry?: Retry };
 
-type HistItem = { t: string; codes: string[]; left: string[] };
+type HistItem = { t: string; codes: string[]; left: string[]; note?: string };
 
 const STEPS: { label: string; icon: IconName }[] = [
   { label: "Ansluter till scannern", icon: "bluetooth" },
   { label: "Pratar med bilen", icon: "car" },
-  { label: "Letar efter fel", icon: "magnify" },
+  { label: "Tittar vad bilen sparat", icon: "magnify" },
   { label: "Släcker lampan", icon: "lightbulb-off-outline" },
 ];
 
@@ -48,11 +49,17 @@ function greeting() {
   if (h < 18) return "Hej";
   return "God kväll";
 }
-function vibrate(kind: "ok" | "warn") {
+function vibrate(kind: "ok" | "calm") {
   if (!native) return;
-  Haptics.notificationAsync(kind === "ok"
-    ? Haptics.NotificationFeedbackType.Success
-    : Haptics.NotificationFeedbackType.Warning).catch(() => {});
+  // Glad vibration när det gick bra, bara en mjuk knackning annars.
+  (kind === "ok"
+    ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    : Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)).catch(() => {});
+}
+async function addHistory(item: HistItem) {
+  const hist = await load<HistItem[]>("history", []);
+  hist.unshift(item);
+  await save("history", hist.slice(0, 50));
 }
 
 /* ------------------------------------------------------------------ */
@@ -73,7 +80,7 @@ function Main() {
   const busy = useRef(false);
 
   const step = (n: number) => setScreen({ kind: "work", step: n });
-  const finish = (sc: Extract<Screen, { kind: "ok" | "warn" }>) => { vibrate(sc.kind); setScreen(sc); };
+  const finish = (sc: Extract<Screen, { kind: "ok" | "calm" }>) => { vibrate(sc.kind); setScreen(sc); };
 
   async function guarded(fn: () => Promise<void>) {
     if (busy.current) return;
@@ -83,10 +90,13 @@ function Main() {
     try { await fn(); }
     catch (e: any) {
       if (e instanceof FriendlyError)
-        finish({ kind: "warn", title: e.title, text: e.text, noScanner: e.title === "Hittade ingen scanner" });
-      else
-        finish({ kind: "warn", title: "Något gick fel",
-          text: "Kontrollera att scannern sitter i och att Bluetooth är på. Försök sedan igen.\n\n(" + (e?.message ?? e) + ")" });
+        finish({ kind: "calm", title: e.title, text: e.text, retry: e.retry, icon: "refresh" });
+      else {
+        // Tekniska detaljer visas inte för mamma, men sparas i historiken för den som hjälper till.
+        addHistory({ t: new Date().toISOString(), codes: [], left: [], note: String(e?.message ?? e) });
+        finish({ kind: "calm", title: "Vi tar det en gång till", icon: "refresh", retry: "again",
+          text: "Ibland behöver scannern bara ett nytt försök. Kolla gärna att den sitter i och att Bluetooth är på, och tryck sedan på knappen nedan." });
+      }
     } finally {
       busy.current = false;
       deactivateKeepAwake();
@@ -103,10 +113,9 @@ function Main() {
     const list = await scan(showAll);
     if (list.length === 1) return runObd(list[0]);
     if (list.length > 1) { setScreen({ kind: "pick", list }); return; }
-    throw new FriendlyError("Hittade ingen scanner",
-      showAll
-        ? "Kontrollera att scannern sitter i ordentligt och att tändningen är på. Försök sedan igen."
-        : "Kontrollera att scannern sitter i ordentligt och att tändningen är på.\n\nHittar den ändå inget, tryck på ”Visa alla enheter”.");
+    throw new FriendlyError("Vi hittar inte scannern än",
+      "Det brukar lösa sig direkt. Tryck in scannern ordentligt och vrid om nyckeln till tändning på. Tryck sedan på knappen nedan, så letar vi igen.",
+      "search");
   });
 
   const pick = (d: Found) => guarded(() => runObd(d));
@@ -125,8 +134,8 @@ function Main() {
       let r = "";
       try { r = await elm.send("0100", 15000); } catch { r = "UNABLE TO CONNECT"; }
       if (!answered0100(r))
-        throw new FriendlyError("Bilen svarar inte",
-          "Vrid om nyckeln till tändning på, så att lamporna på instrumentbrädan lyser. Kontrollera också att scannern sitter i ordentligt.");
+        throw new FriendlyError("Bilen behöver vakna",
+          "Vrid om nyckeln till tändning på, så att lamporna på instrumentbrädan tänds. Tryck sedan på knappen nedan, så fortsätter vi.");
 
       let isCan: boolean | undefined;
       try { isCan = protocolIsCan(await elm.send("ATDPN", 3000)); } catch {}
@@ -136,25 +145,24 @@ function Main() {
 
       step(3);
       if (!clearedOk(await elm.send("04", 10000)))
-        throw new FriendlyError("Bilen ville inte radera",
-          "Stäng av motorn men låt tändningen vara på. Försök sedan igen.");
+        throw new FriendlyError("Nästan klart",
+          "Stäng av motorn men låt tändningen vara på. Tryck sedan på knappen nedan, så gör vi färdigt.");
       await sleep(800);
       let after: string[] = [];
       try { after = parseDTCs(await elm.send("03", 10000), isCan); } catch {}
 
-      const hist = await load<HistItem[]>("history", []);
-      hist.unshift({ t: new Date().toISOString(), codes: before, left: after });
-      await save("history", hist.slice(0, 50));
+      await addHistory({ t: new Date().toISOString(), codes: before, left: after });
 
       if (after.length)
-        finish({ kind: "warn", title: "Felet kom tillbaka",
-          text: "Lampan gick inte att släcka den här gången. Bilen behöver troligen titta på av en verkstad.", codes: after });
+        finish({ kind: "calm", icon: "wrench-outline", title: "Dags för en liten översyn",
+          text: "Bilen vill gärna att en verkstad tittar på den. Ingen fara, boka en tid när det passar dig. Här nedanför ser du vad det brukar vara.",
+          codes: after });
       else if (before.length)
-        finish({ kind: "ok", title: "Klart!",
+        finish({ kind: "ok", title: "Klart! Bra jobbat.",
           text: "Motorlampan är släckt.\nStäng av bilen, vänta 10 sekunder och starta igen. Sedan är allt som vanligt.", codes: before });
       else
         finish({ kind: "ok", title: "Allt ser bra ut",
-          text: "Bilen hade inga sparade fel.\nOm lampan ändå lyser: stäng av bilen, vänta en stund och starta igen." });
+          text: "Bilen hade inga sparade fel.\nLyser lampan ändå? Stäng av bilen, vänta en stund och starta igen." });
     } finally {
       await elm.disconnect();
     }
@@ -175,7 +183,7 @@ function Main() {
           <FadeIn style={s.screen}>
             <View>
               <Text style={s.hello}>{greeting()}!</Text>
-              <Text style={s.lead}>Har motorlampan tänts? Det fixar vi på en halv minut.</Text>
+              <Text style={s.lead}>Har motorlampan tänts? Ingen fara, det här fixar vi tillsammans på en halv minut.</Text>
             </View>
 
             <View style={s.stepsCard}>
@@ -193,8 +201,8 @@ function Main() {
         {working && (
           <FadeIn style={s.screen}>
             <View>
-              <Text style={s.title}>Ett ögonblick…</Text>
-              <Text style={s.lead}>Låt telefonen vara kvar i bilen så länge.</Text>
+              <Text style={s.title}>Nu fixar vi det</Text>
+              <Text style={s.lead}>Luta dig tillbaka, det tar bara en liten stund.</Text>
             </View>
             <View style={s.card}>
               {STEPS.map((st, i) => (
@@ -225,22 +233,28 @@ function Main() {
           </FadeIn>
         )}
 
-        {(screen.kind === "ok" || screen.kind === "warn") && (
+        {(screen.kind === "ok" || screen.kind === "calm") && (
           <FadeIn style={s.screen}>
-            <ResultBadge c={c} ok={screen.kind === "ok"} />
+            <ResultBadge c={c} ok={screen.kind === "ok"} icon={screen.icon} />
             <View style={{ alignItems: "center" }}>
               <Text style={[s.title, { textAlign: "center" }]}>{screen.title}</Text>
               <Text style={[s.lead, { textAlign: "center" }]}>{screen.text}</Text>
             </View>
 
-            {!!screen.codes?.length && <CodeDetails c={c} codes={screen.codes} startOpen={screen.kind === "warn"} />}
+            {!!screen.codes?.length && <CodeDetails c={c} codes={screen.codes} startOpen={screen.kind === "calm"} />}
 
             <View style={{ gap: 12 }}>
-              {screen.kind === "warn" && (
-                <PrimaryButton c={c} icon="refresh" label={screen.noScanner ? "Visa alla enheter" : "Försök igen"}
-                  onPress={() => start(!!screen.noScanner, !!screen.noScanner)} />
+              {screen.retry && (
+                <PrimaryButton c={c} icon="refresh"
+                  label={screen.retry === "again" ? "Försök igen" : screen.retry === "search" ? "Leta igen" : "Välj scanner"}
+                  onPress={() => start(screen.retry !== "again")} />
               )}
               <SecondaryButton c={c} label={screen.kind === "ok" ? "Klar" : "Tillbaka"} onPress={() => setScreen({ kind: "idle" })} />
+              {screen.retry === "search" && (
+                <Pressable onPress={() => start(true, true)} style={{ alignSelf: "center", padding: 8 }} accessibilityRole="button">
+                  <Text style={s.footText}>Visa alla Bluetooth-enheter</Text>
+                </Pressable>
+              )}
             </View>
           </FadeIn>
         )}
@@ -249,17 +263,18 @@ function Main() {
           <FadeIn style={s.screen}>
             <Text style={s.title}>Historik</Text>
             <View style={s.card}>
-              {history.length === 0 && <Text style={s.histEmpty}>Inget har raderats än.</Text>}
+              {history.length === 0 && <Text style={s.histEmpty}>Här syns varje gång du har släckt lampan.</Text>}
               {history.map((h, i) => (
                 <View key={h.t} style={[s.histRow, i > 0 && s.histBorder]}>
-                  <MaterialCommunityIcons name={h.left.length ? "alert-circle" : "check-circle"} size={24}
-                    color={h.left.length ? c.warn : c.ok} />
+                  <MaterialCommunityIcons name={h.note ? "refresh" : h.left.length ? "wrench-outline" : "check-circle"} size={24}
+                    color={h.note || h.left.length ? c.primary : c.ok} />
                   <View style={{ flex: 1 }}>
                     <Text style={s.histDate}>
                       {new Date(h.t).toLocaleString("sv-SE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </Text>
                     <Text style={s.histCodes}>
-                      {h.codes.length ? h.codes.join(", ") : "Inga felkoder"}{h.left.length ? " · kom tillbaka" : ""}
+                      {h.note ? "Avbröts: " + h.note
+                        : (h.codes.length ? h.codes.join(", ") : "Inga felkoder") + (h.left.length ? " · tändes igen" : "")}
                     </Text>
                   </View>
                 </View>
@@ -362,7 +377,7 @@ function ProgressRow({ c, label, icon, state, last }:
   );
 }
 
-function ResultBadge({ c, ok }: { c: C; ok: boolean }) {
+function ResultBadge({ c, ok, icon }: { c: C; ok: boolean; icon?: IconName }) {
   const s = makeStyles(c);
   const a = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -370,9 +385,9 @@ function ResultBadge({ c, ok }: { c: C; ok: boolean }) {
   }, []);
   return (
     <View style={{ alignItems: "center", paddingTop: 12 }}>
-      <View style={[s.badgeHalo, { backgroundColor: ok ? c.okSoft : c.warnSoft }]}>
-        <Animated.View style={[s.badge, { backgroundColor: ok ? c.ok : c.warn, transform: [{ scale: a }] }]}>
-          <MaterialCommunityIcons name={ok ? "check-bold" : "exclamation-thick"} size={72} color="#fff" />
+      <View style={[s.badgeHalo, { backgroundColor: ok ? c.okSoft : c.primarySoft }]}>
+        <Animated.View style={[s.badge, { backgroundColor: ok ? c.ok : c.calm, transform: [{ scale: a }] }]}>
+          <MaterialCommunityIcons name={ok ? "check-bold" : icon ?? "refresh"} size={ok ? 72 : 64} color="#fff" />
         </Animated.View>
       </View>
     </View>
@@ -385,7 +400,7 @@ function CodeDetails({ c, codes, startOpen }: { c: C; codes: string[]; startOpen
   return (
     <View style={s.card}>
       <Pressable onPress={() => setOpen(!open)} style={s.detailsHead} accessibilityRole="button">
-        <Text style={s.detailsTitle}>Vad var det för fel?</Text>
+        <Text style={s.detailsTitle}>Vill du veta mer?</Text>
         <MaterialCommunityIcons name={open ? "chevron-up" : "chevron-down"} size={26} color={c.muted} />
       </Pressable>
       {open && (
@@ -406,7 +421,7 @@ function CodeDetails({ c, codes, startOpen }: { c: C; codes: string[]; startOpen
             );
           })}
           <Text style={s.disclaimer}>
-            Det här är vanliga orsaker, inte en säker diagnos. Visa koderna för verkstaden.
+            Det här är bara vanliga orsaker. Verkstaden kan ta en närmare titt om det behövs.
           </Text>
         </>
       )}
@@ -450,13 +465,13 @@ function FooterLink({ c, icon, label, onPress }: { c: C; icon: IconName; label: 
 const lightColors = {
   bg: "#f7f3ec", card: "#ffffff", fg: "#1f2430", muted: "#626877", faint: "#b4b8c2", line: "#ece6db",
   primary: "#2457c5", primarySoft: "#e7eefc", amber: "#ffb21e",
-  ok: "#2f9e5d", okSoft: "#dff3e7", warn: "#d9822b", warnSoft: "#fbead8",
+  ok: "#2f9e5d", okSoft: "#dff3e7", calm: "#4a7fd6",
   bigTop: "#2457c5", shadow: "#1b2a4a",
 };
 const darkColors = {
   bg: "#10141c", card: "#1a2030", fg: "#f1f3f8", muted: "#a3aabb", faint: "#4c5466", line: "#273042",
   primary: "#5b8cff", primarySoft: "#1f2d4d", amber: "#ffb21e",
-  ok: "#3fbf74", okSoft: "#16372a", warn: "#f0a050", warnSoft: "#3d2a16",
+  ok: "#3fbf74", okSoft: "#16372a", calm: "#5b8cff",
   bigTop: "#2f63d6", shadow: "#000000",
 };
 

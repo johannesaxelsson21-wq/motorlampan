@@ -2,48 +2,49 @@
 
 export type CodeInfo = { title: string; fix: string };
 
-const TURBO_SLANG = "Vanligaste orsaken är en lös eller sprucken turboslang, eller en trasig dumpventil. Oftast billigt att laga: be verkstaden kolla slangarna mellan turbon och motorn.";
-const SENSOR = "Givaren, eller kontakten och kabeln till den. Ibland räcker det att rengöra kontakten, annars byts givaren (en ganska billig del).";
-const WASTEGATE = "Turbons styrventil (wastegate), dess kontakt eller vakuumslangen till den. Verkstaden kan testa ventilen och slangarna.";
-const DUMP = "Dumpventilen (bypass-ventilen) kan ha fått ett sprucket membran. Det är en vanlig och billig reservdel.";
+// Texterna ska kännas lugna och trygga: vanliga, ofta enkla orsaker, inga skrämmande ord.
+const TURBO_SLANG = "Det här är vanligt och oftast enkelt. Ofta har en slang till turbon släppt lite, eller så behöver en liten ventil bytas. Verkstaden brukar fixa det snabbt.";
+const SENSOR = "En liten givare som mäter trycket. Ibland räcker det att verkstaden gör ren kontakten, annars byter de givaren. Det är en enkel och billig del.";
+const WASTEGATE = "En liten ventil som styr turbon. Verkstaden kollar ventilen och slangarna till den, det brukar gå fort.";
+const DUMP = "En liten ventil på turbon som slits med tiden. Det är en vanlig och billig del som verkstaden byter snabbt.";
 
 /** Vanliga felkoder med enkel förklaring och möjlig lösning. */
 export const INFO: Record<string, CodeInfo> = {
-  P0299: { title: "Turbo: för lågt laddtryck", fix: TURBO_SLANG },
-  P0234: { title: "Turbo: för högt laddtryck", fix: "Ofta kärvar wastegate-ventilen eller så läcker vakuumslangen till den. Det kan också vara laddtrycksgivaren. Verkstaden kan testa ventilen." },
-  P0235: { title: "Laddtrycksgivare", fix: SENSOR },
-  P0236: { title: "Laddtrycksgivare: orimligt värde", fix: SENSOR },
-  P0237: { title: "Laddtrycksgivare: låg signal", fix: SENSOR },
-  P0238: { title: "Laddtrycksgivare: hög signal", fix: SENSOR },
+  P0299: { title: "Turbon tar det lite lugnt", fix: TURBO_SLANG },
+  P0234: { title: "Turbon har lite för mycket kraft", fix: "Oftast en liten ventil på turbon som behöver röra sig lättare, eller slangen till den. Verkstaden brukar lösa det enkelt." },
+  P0235: { title: "Givare för turbon", fix: SENSOR },
+  P0236: { title: "Givare för turbon", fix: SENSOR },
+  P0237: { title: "Givare för turbon", fix: SENSOR },
+  P0238: { title: "Givare för turbon", fix: SENSOR },
   P0243: { title: "Turbons styrventil", fix: WASTEGATE },
   P0244: { title: "Turbons styrventil", fix: WASTEGATE },
-  P0245: { title: "Turbons styrventil: låg signal", fix: WASTEGATE },
-  P0246: { title: "Turbons styrventil: hög signal", fix: WASTEGATE },
-  P0033: { title: "Turbons dumpventil", fix: DUMP },
-  P0034: { title: "Turbons dumpventil: låg signal", fix: DUMP },
-  P0035: { title: "Turbons dumpventil: hög signal", fix: DUMP },
-  P2261: { title: "Turbons dumpventil: mekaniskt fel", fix: DUMP },
-  P2263: { title: "Turbon ger fel laddtryck", fix: "Laddtrycket blir inte som det ska. Oftast en läckande slang, dumpventilen eller wastegate-ventilen." },
-  P2563: { title: "Turbons lägesgivare", fix: "Givaren eller styrmotorn på turbon. Låt en verkstad felsöka." },
+  P0245: { title: "Turbons styrventil", fix: WASTEGATE },
+  P0246: { title: "Turbons styrventil", fix: WASTEGATE },
+  P0033: { title: "Turbons lilla ventil", fix: DUMP },
+  P0034: { title: "Turbons lilla ventil", fix: DUMP },
+  P0035: { title: "Turbons lilla ventil", fix: DUMP },
+  P2261: { title: "Turbons lilla ventil", fix: DUMP },
+  P2263: { title: "Turbon tar det lite lugnt", fix: TURBO_SLANG },
+  P2563: { title: "Givare på turbon", fix: "En givare på turbon. Verkstaden tittar på den och vet vad som behövs." },
   P0045: { title: "Turbons styrning", fix: WASTEGATE },
   P0046: { title: "Turbons styrning", fix: WASTEGATE },
-  P0101: { title: "Luftmassemätare", fix: "Luftmassemätaren kan vara smutsig. Den går ofta att rengöra med en särskild spray. Kolla också luftfiltret." },
-  P0171: { title: "För lite bränsle i blandningen", fix: "Ofta ett luftläckage, till exempel en sprucken slang, eller en smutsig luftmassemätare." },
-  P0300: { title: "Motorn misständer", fix: "Vanligen tändstift eller en tändspole. Kör lugnt och låt en verkstad titta snart." },
-  P0401: { title: "EGR-ventil", fix: "EGR-ventilen är ofta igensotad. Den kan rengöras eller bytas." },
-  P0420: { title: "Katalysator", fix: "Katalysatorn har blivit sämre, eller så är en lambdasond trasig. Inte akut, men bör kollas före besiktningen." },
+  P0101: { title: "Luftmätaren", fix: "Mätaren som känner hur mycket luft motorn får behöver ofta bara göras ren. Verkstaden kollar samtidigt luftfiltret." },
+  P0171: { title: "Luft och bränsle", fix: "Motorn får lite för mycket luft. Oftast en liten slang som släppt, något verkstaden fixar enkelt." },
+  P0300: { title: "Tändningen", fix: "Oftast ett tändstift som har gjort sitt, en vanlig och billig del. Boka gärna en tid på verkstaden inom kort." },
+  P0401: { title: "En ventil för avgaserna", fix: "Ventilen brukar bara behöva göras ren. Det är en vanlig sak som verkstaden känner väl till." },
+  P0420: { title: "Avgasreningen", fix: "Ingen brådska. Nämn det för verkstaden vid nästa service, eller innan besiktningen." },
 };
 
-/** Förklaring för en kod. Okända koder får en allmän text utifrån kodens grupp. */
+/** Förklaring för en kod. Okända koder får en allmän lugn text utifrån kodens grupp. */
 export function codeInfo(code: string): CodeInfo {
   if (INFO[code]) return INFO[code];
   const g = code.slice(0, 3);
-  if (code[0] === "P" && g === "P03") return { title: "Tändning eller misständning", fix: "Ofta tändstift eller tändspole. Låt en verkstad titta." };
-  if (code[0] === "P" && (g === "P01" || g === "P02")) return { title: "Luft eller bränsle", fix: "Något med luft- eller bränslesystemet, till exempel en givare eller en slang. Visa koden för verkstaden." };
-  if (code[0] === "P" && g === "P04") return { title: "Avgasrening", fix: "Något i avgasreningen. Oftast inte akut, men visa koden för verkstaden." };
-  if (code[0] === "P" && g === "P07") return { title: "Växellåda", fix: "Ett fel i växellådan. Låt en verkstad titta." };
-  if (code[0] === "U") return { title: "Kommunikation i bilen", fix: "Bilens styrenheter har haft svårt att prata med varandra. Kan vara tillfälligt. Kommer det tillbaka, låt en verkstad titta." };
-  return { title: "Ovanlig felkod", fix: "Visa koden för en verkstad, så kan de slå upp vad den betyder för just din bil." };
+  if (g === "P03") return { title: "Tändningen", fix: "Oftast ett tändstift eller en tändspole, vanliga och billiga delar. Boka gärna en tid på verkstaden inom kort." };
+  if (g === "P01" || g === "P02") return { title: "Luft och bränsle", fix: "Oftast en liten givare eller slang. Nämn koden för verkstaden, så vet de var de ska titta." };
+  if (g === "P04") return { title: "Avgasreningen", fix: "Ingen brådska. Nämn det för verkstaden vid nästa service." };
+  if (g === "P07") return { title: "Växellådan", fix: "Nämn koden för verkstaden, så tittar de på det i lugn och ro." };
+  if (code[0] === "U") return { title: "Bilens elektronik", fix: "Bilens datorer har tappat kontakten med varandra en kort stund. Det är ofta helt tillfälligt." };
+  return { title: "En mindre vanlig kod", fix: "Visa koden för verkstaden, så slår de upp vad den betyder för just din bil." };
 }
 
 export function decodeDTC(w: string): string {

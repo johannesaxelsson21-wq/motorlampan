@@ -28,10 +28,10 @@ export async function waitForBluetooth(): Promise<void> {
   }
   if (state === "PoweredOn") return;
   if (state === "Unauthorized")
-    throw new FriendlyError("Bluetooth är inte tillåtet",
-      "Öppna Inställningar → Motorlampan och slå på Bluetooth. Försök sedan igen.");
-  throw new FriendlyError("Bluetooth är avstängt",
-    "Svep ner från övre högra hörnet och tryck på Bluetooth-symbolen så att den blir blå. Försök sedan igen.");
+    throw new FriendlyError("Appen behöver Bluetooth",
+      "Öppna Inställningar, tryck på Motorlampan och slå på Bluetooth. Kom sedan tillbaka hit och tryck på knappen nedan.");
+  throw new FriendlyError("Slå på Bluetooth",
+    "Svep ner från övre högra hörnet och tryck på Bluetooth-symbolen så att den blir blå. Tryck sedan på knappen nedan.");
 }
 
 /** Söker efter scannrar i några sekunder. showAll = visa alla enheter med namn. */
@@ -60,8 +60,9 @@ export class Elm {
     try {
       this.device = await manager.connectToDevice(id, { timeout: 10000 });
     } catch {
-      throw new FriendlyError("Hittar inte scannern",
-        "Kontrollera att scannern sitter i och att tändningen är på. Försök igen.");
+      throw new FriendlyError("Vi hittar inte scannern än",
+        "Det brukar lösa sig direkt. Tryck in scannern ordentligt och vrid om nyckeln till tändning på. Tryck sedan på knappen nedan, så letar vi igen.",
+        "search");
     }
     await this.device.discoverAllServicesAndCharacteristics();
     const services = await this.device.services();
@@ -78,8 +79,9 @@ export class Elm {
         return;
       }
     }
-    throw new FriendlyError("Fel sorts enhet",
-      "Det här verkar inte vara en OBD2-scanner. Tryck på ”Välj en annan scanner” och försök igen.");
+    throw new FriendlyError("Det där var nog inte scannern",
+      "Inga problem. Tryck på knappen nedan och välj en annan i listan.",
+      "pick");
   }
 
   private onData(c: Characteristic) {

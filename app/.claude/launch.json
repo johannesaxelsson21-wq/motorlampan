@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "motorlampan-web",
+      "runtimeExecutable": "npx.cmd",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8792"],
+      "port": 8792,
+      "autoPort": false
+    }
+  ]
+}

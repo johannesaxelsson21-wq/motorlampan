@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Motorlampan",
+    "slug": "motorlampan",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nevenfelt.motorlampan",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDevelopmentRegion": "sv"
+      }
+    },
+    "android": {
+      "package": "com.nevenfelt.motorlampan",
+      "adaptiveIcon": {
+        "backgroundColor": "#14213d",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "bluetoothAlwaysPermission": "Motorlampan använder Bluetooth för att prata med OBD2-scannern i bilen."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "14251c73-bb93-4c50-a1d6-f78e01b3f62b"
+      }
+    },
+    "owner": "nevenfelt"
+  }
+}
